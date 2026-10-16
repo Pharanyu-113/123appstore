@@ -1,6 +1,6 @@
 -- 123พาณิชย์ปลีกส่ง · Supabase schema (ฐานข้อมูลเริ่มต้น)
 -- หลังรันไฟล์นี้ ต้องรัน custom-auth-migration.sql, migrations/20260906_daily_receipts_categories_checkout_stock.sql
--- และ migrations/20260930_product_category_management.sql ต่อเสมอ
+-- migrations/20260930_product_category_management.sql และ migrations/20261016_packs_per_box_stock.sql ต่อเสมอ
 
 create extension if not exists "pgcrypto";
 

@@ -45,18 +45,18 @@ export async function GET() {
   }
 
   try {
-    const productQuery = "/rest/v1/products?select=id,name,category,category_id,price_box,price_pack,stock,created_at&order=stock.asc";
+    const productQuery = "/rest/v1/products?select=id,name,category,category_id,price_box,price_pack,packs_per_box,stock,stock_pack,created_at&order=stock.asc";
     const categoryQuery = "/rest/v1/product_categories?select=id,name,normalized_name,is_active,created_at,updated_at&order=is_active.desc,name.asc";
     const orderQuery =
       "/rest/v1/orders?select=id,retailer_id,receipt_id,assigned_employee_id,status,total_amount,created_at," +
       "retailer:profiles!orders_retailer_id_fkey(id,shop_name,phone,role)," +
       "items:order_items(id,product_id,product_name,quantity_box,quantity_pack,unit_price_box,unit_price_pack,line_total," +
-      "product:products(id,name,category,price_box,price_pack,stock))&order=created_at.desc";
+      "product:products(id,name,category,price_box,price_pack,packs_per_box,stock,stock_pack))&order=created_at.desc";
     const receiptQuery =
       "/rest/v1/daily_receipts?select=id,retailer_id,receipt_date,total_amount,created_at,updated_at," +
       "retailer:profiles!daily_receipts_retailer_id_fkey(id,shop_name,phone,role)," +
       "items:receipt_items(id,product_id,product_name,category,quantity_box,quantity_pack,unit_price_box,unit_price_pack,line_total," +
-      "product:products(id,name,category,price_box,price_pack,stock))&order=receipt_date.desc,created_at.desc";
+      "product:products(id,name,category,price_box,price_pack,packs_per_box,stock,stock_pack))&order=receipt_date.desc,created_at.desc";
     const trackingQuery =
       "/rest/v1/delivery_tracking?select=order_id,employee_id,latitude,longitude,updated_at," +
       "employee:profiles!delivery_tracking_employee_id_fkey(id,shop_name)";

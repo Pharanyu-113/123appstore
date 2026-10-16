@@ -80,7 +80,7 @@ export async function fetchDashboardSnapshot(
 
 export async function addProduct(
   _session: AppSession,
-  product: Pick<Product, "name" | "price_box" | "price_pack" | "stock"> & { categoryId: string },
+  product: Pick<Product, "name" | "price_box" | "price_pack" | "packs_per_box" | "stock"> & { categoryId: string },
 ) {
   return apiRequest<Product>("/api/products", {
     method: "POST",

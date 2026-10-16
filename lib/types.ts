@@ -15,7 +15,11 @@ export interface Product {
   category_id?: string | null;
   price_box: number;
   price_pack: number | null;
+  // Required when price_pack is set. Null on older products, which still treat one pack as one stock unit.
+  packs_per_box?: number | null;
+  // `stock` counts full boxes; `stock_pack` counts loose packs from an opened box.
   stock: number;
+  stock_pack?: number;
   created_at?: string;
 }
 

@@ -18,9 +18,9 @@ export async function POST(request: Request) {
   if (!auth) return NextResponse.json({ message: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" }, { status: 401 });
   if (!isOwner(auth.profile.role)) return NextResponse.json({ message: "เฉพาะ OWNER เท่านั้นที่เพิ่มสินค้าได้" }, { status: 403 });
 
-  let input: { name?: unknown; categoryId?: unknown; category?: unknown; price_box?: unknown; price_pack?: unknown; stock?: unknown };
+  let input: { name?: unknown; categoryId?: unknown; category?: unknown; price_box?: unknown; price_pack?: unknown; packs_per_box?: unknown; stock?: unknown };
   try {
-    input = (await request.json()) as { name?: unknown; categoryId?: unknown; category?: unknown; price_box?: unknown; price_pack?: unknown; stock?: unknown };
+    input = (await request.json()) as { name?: unknown; categoryId?: unknown; category?: unknown; price_box?: unknown; price_pack?: unknown; packs_per_box?: unknown; stock?: unknown };
   } catch {
     return NextResponse.json({ message: "รูปแบบข้อมูลไม่ถูกต้อง" }, { status: 400 });
   }
@@ -30,6 +30,7 @@ export async function POST(request: Request) {
   const legacyCategory = typeof input.category === "string" ? input.category.trim() : "";
   const priceBox = input.price_box;
   const pricePack = input.price_pack;
+  const packsPerBox = input.packs_per_box ?? null;
   const stock = input.stock;
   if (
     !name || name.length > 160 ||
@@ -39,6 +40,10 @@ export async function POST(request: Request) {
     typeof stock !== "number" || !Number.isInteger(stock) || stock < 0
   ) {
     return NextResponse.json({ message: "ข้อมูลสินค้าไม่ถูกต้อง" }, { status: 400 });
+  }
+  // Pack sales split boxes, so a pack price needs to know how many packs make a box.
+  if (pricePack !== null && (typeof packsPerBox !== "number" || !Number.isInteger(packsPerBox) || packsPerBox < 1 || packsPerBox > 10_000)) {
+    return NextResponse.json({ message: "กรุณาระบุจำนวนแพ็คต่อกล่องเมื่อกำหนดราคาแพ็ค" }, { status: 400 });
   }
 
   try {
@@ -54,7 +59,7 @@ export async function POST(request: Request) {
     const rows = await adminRequest<Product[]>("/rest/v1/products", {
       method: "POST",
       headers: { Prefer: "return=representation" },
-      body: JSON.stringify({ name, category: category.name, category_id: category.id, price_box: priceBox, price_pack: pricePack, stock, created_by: auth.user.id }),
+      body: JSON.stringify({ name, category: category.name, category_id: category.id, price_box: priceBox, price_pack: pricePack, packs_per_box: pricePack === null ? null : packsPerBox, stock, created_by: auth.user.id }),
     });
     if (!rows[0]) throw new Error("ไม่สามารถเพิ่มสินค้าได้");
     return NextResponse.json(rows[0], { status: 201 });

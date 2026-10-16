@@ -34,7 +34,7 @@ import type {
 } from "@/lib/types";
 
 type CartState = Record<string, { boxes: number; packs: number }>;
-type ProductDraft = { name: string; categoryId: string; priceBox: string; pricePack: string; stock: string };
+type ProductDraft = { name: string; categoryId: string; priceBox: string; pricePack: string; packsPerBox: string; stock: string };
 type SharedLocation = { orderId: string; latitude: number; longitude: number; sentAt: number };
 
 const LOCATION_MIN_SEND_GAP_MS = 5_000;
@@ -120,7 +120,7 @@ const viewTitle: Record<DashboardView, { title: string; subtitle: string }> = {
   cart: { title: "ตะกร้าสินค้าของฉัน", subtitle: "ตรวจสอบรายการและยอดรวมก่อนยืนยันคำสั่งซื้อ" },
 };
 
-const createEmptyDraft = (categoryId = ""): ProductDraft => ({ name: "", categoryId, priceBox: "", pricePack: "", stock: "0" });
+const createEmptyDraft = (categoryId = ""): ProductDraft => ({ name: "", categoryId, priceBox: "", pricePack: "", packsPerBox: "", stock: "0" });
 
 function retailerCartStorageKey(retailerId: string) {
   return `${RETAILER_CART_STORAGE_PREFIX}${retailerId}`;
@@ -203,6 +203,12 @@ function stockLabel(stock: number) {
   if (stock < 5) return { text: "เติมด่วน", className: "bg-red-600 text-white" };
   if (stock < 10) return { text: "ใกล้หมด", className: "bg-[#fff5da] text-[#9f7017]" };
   return { text: "พร้อมขาย", className: "bg-[#e6f5eb] text-[#227654]" };
+}
+
+function stockText(product: Pick<Product, "stock" | "stock_pack" | "packs_per_box">) {
+  if (!product.packs_per_box) return product.stock.toLocaleString();
+  const packs = product.stock_pack || 0;
+  return `${product.stock.toLocaleString()} กล่อง${packs ? ` ${packs} แพ็ค` : ""}`;
 }
 
 function productTone(id: string | null | undefined) {
@@ -574,10 +580,15 @@ export function CommerceDashboard({ expectedRole }: { expectedRole: Role }) {
     event.preventDefault();
     const priceBox = Number(draft.priceBox);
     const pricePack = draft.pricePack.trim() ? Number(draft.pricePack) : null;
+    const packsPerBox = pricePack === null ? null : Number(draft.packsPerBox);
     const stock = Math.max(0, Number(draft.stock || 0));
     const category = categories.find((item) => item.id === draft.categoryId && item.is_active) || null;
     if (!draft.name.trim() || !category || !Number.isFinite(priceBox) || priceBox < 0 || (pricePack !== null && (!Number.isFinite(pricePack) || pricePack < 0))) {
       notify("กรุณาระบุชื่อสินค้า ประเภทสินค้า และราคากล่องให้ถูกต้อง");
+      return;
+    }
+    if (packsPerBox !== null && (!Number.isInteger(packsPerBox) || packsPerBox < 1)) {
+      notify("กรุณาระบุจำนวนแพ็คต่อกล่องเมื่อกำหนดราคาแพ็ค");
       return;
     }
 
@@ -588,7 +599,9 @@ export function CommerceDashboard({ expectedRole }: { expectedRole: Role }) {
       category_id: category.id,
       price_box: priceBox,
       price_pack: pricePack,
+      packs_per_box: packsPerBox,
       stock,
+      stock_pack: 0,
       created_at: new Date().toISOString(),
     };
     if (!session) {
@@ -602,6 +615,7 @@ export function CommerceDashboard({ expectedRole }: { expectedRole: Role }) {
         categoryId: category.id,
         price_box: optimistic.price_box,
         price_pack: optimistic.price_pack,
+        packs_per_box: optimistic.packs_per_box,
         stock: optimistic.stock,
       });
       setProducts((current) => [...current, created || optimistic].sort((a, b) => a.stock - b.stock));
@@ -904,7 +918,7 @@ export function CommerceDashboard({ expectedRole }: { expectedRole: Role }) {
                   <button key={product.id} onClick={() => setQuery(product.name)} className="flex w-full items-center gap-3 rounded-xl px-1 text-left transition hover:bg-red-100">
                     <ProductMark product={product} size="sm" />
                     <span className="min-w-0 flex-1 truncate text-xs font-bold text-red-900">{product.name}</span>
-                    <span className="text-xs font-black text-red-700">{product.stock}</span>
+                    <span className="text-xs font-black text-red-700">{stockText(product)}</span>
                   </button>
                 ))}
               </div>
@@ -1132,7 +1146,7 @@ function InventoryPanel({ title, caption, products, query, onQueryChange, onAdju
     setQuantities((current) => ({ ...current, [product.id]: "" }));
   };
 
-  return <section className="overflow-hidden rounded-[25px] border border-[#dbe8e2] bg-white shadow-sm"><div className="flex flex-col justify-between gap-3 border-b border-[#edf2ef] p-4 sm:flex-row sm:items-center sm:p-5"><div><h2 className="text-lg font-black tracking-tight text-[#173f35]">{title}</h2><p className="mt-1 text-xs text-[#748a80]">{caption}</p></div><SearchInput query={query} onChange={onQueryChange} /></div><div className="divide-y divide-[#edf2ef]">{products.map((product) => { const stock = stockLabel(product.stock); const busy = busyAction === `stock-${product.id}` || busyAction === `delete-${product.id}`; const quantity = Number(quantities[product.id]); const canAdd = Number.isInteger(quantity) && quantity >= 1 && quantity <= MAX_QUANTITY; return <div key={product.id} className="flex flex-wrap items-center gap-3 p-4 transition hover:bg-[#fbfdfb] sm:flex-nowrap sm:p-4.5"><ProductMark product={product} /><div className="min-w-[145px] flex-1"><p className="truncate text-sm font-black text-[#2a4c42]">{product.name}</p><div className="mt-1 flex flex-wrap items-center gap-1.5"><span className="rounded-md bg-[#edf5f1] px-1.5 py-0.5 text-[10px] font-black text-[#316756]">{product.category}</span><span className="text-[11px] font-bold text-[#667e74]">กล่อง {price(product.price_box)}</span>{product.price_pack !== null && <><span className="text-[#bdcbc5]">·</span><span className="text-[11px] font-bold text-[#667e74]">แพ็ค {price(product.price_pack)}</span></>}</div></div><div className="ml-auto flex items-center gap-2"><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${stock.className}`}>{stock.text}</span><span className="min-w-8 text-right text-sm font-black text-[#244b40]">{product.stock}</span></div><div className="flex flex-wrap items-center justify-end gap-1.5"><button disabled={busy || product.stock === 0} onClick={() => onAdjust(product, -1)} className="grid h-8 w-8 place-items-center rounded-lg border border-[#d6e5de] text-lg font-bold text-[#4e7064] transition hover:border-[#df9f85] hover:bg-[#fff5f0] hover:text-[#c85d39] disabled:cursor-not-allowed disabled:opacity-40">−</button><button disabled={busy} onClick={() => onAdjust(product, 1)} className="grid h-8 w-8 place-items-center rounded-lg bg-[#e5f3ed] text-lg font-bold text-[#0e715c] transition hover:bg-[#cfeade] disabled:cursor-not-allowed disabled:opacity-40">+</button><input aria-label={`จำนวนที่จะเพิ่มสำหรับ ${product.name}`} value={quantities[product.id] || ""} onChange={(event) => setQuantities((current) => ({ ...current, [product.id]: event.target.value }))} type="number" min="1" max={MAX_QUANTITY} step="1" inputMode="numeric" placeholder="จำนวน" className="h-8 w-20 rounded-lg border border-[#d6e5de] bg-white px-2 text-center text-xs font-bold text-[#244b40] outline-none focus:border-[#1c8068]" /><button disabled={busy || !canAdd} onClick={() => addStock(product)} className="h-8 rounded-lg bg-[#0e4d43] px-2.5 text-xs font-extrabold text-white transition hover:bg-[#0a4038] disabled:cursor-not-allowed disabled:opacity-40">เพิ่ม</button>{owner && onDelete && <button disabled={busy} onClick={() => onDelete(product)} title={`ลบ ${product.name}`} className="ml-1 grid h-8 w-8 place-items-center rounded-lg text-[#a17466] transition hover:bg-[#fff0ea] hover:text-[#c35130] focus:outline-none focus:ring-4 focus:ring-[#f7d8ca] disabled:opacity-40" aria-label={`ลบ ${product.name}`}><TrashIcon /></button>}</div></div>; })}</div>{!products.length && <EmptyState icon="⌕" title="ไม่พบสินค้า" text="ลองค้นหาด้วยคำอื่น หรือเพิ่มสินค้าใหม่" />}</section>;
+  return <section className="overflow-hidden rounded-[25px] border border-[#dbe8e2] bg-white shadow-sm"><div className="flex flex-col justify-between gap-3 border-b border-[#edf2ef] p-4 sm:flex-row sm:items-center sm:p-5"><div><h2 className="text-lg font-black tracking-tight text-[#173f35]">{title}</h2><p className="mt-1 text-xs text-[#748a80]">{caption}</p></div><SearchInput query={query} onChange={onQueryChange} /></div><div className="divide-y divide-[#edf2ef]">{products.map((product) => { const stock = stockLabel(product.stock); const busy = busyAction === `stock-${product.id}` || busyAction === `delete-${product.id}`; const quantity = Number(quantities[product.id]); const canAdd = Number.isInteger(quantity) && quantity >= 1 && quantity <= MAX_QUANTITY; return <div key={product.id} className="flex flex-wrap items-center gap-3 p-4 transition hover:bg-[#fbfdfb] sm:flex-nowrap sm:p-4.5"><ProductMark product={product} /><div className="min-w-[145px] flex-1"><p className="truncate text-sm font-black text-[#2a4c42]">{product.name}</p><div className="mt-1 flex flex-wrap items-center gap-1.5"><span className="rounded-md bg-[#edf5f1] px-1.5 py-0.5 text-[10px] font-black text-[#316756]">{product.category}</span><span className="text-[11px] font-bold text-[#667e74]">กล่อง {price(product.price_box)}</span>{product.price_pack !== null && <><span className="text-[#bdcbc5]">·</span><span className="text-[11px] font-bold text-[#667e74]">แพ็ค {price(product.price_pack)}{product.packs_per_box ? ` · ${product.packs_per_box} แพ็ค/กล่อง` : ""}</span></>}</div></div><div className="ml-auto flex items-center gap-2"><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${stock.className}`}>{stock.text}</span><span className="min-w-8 text-right text-sm font-black text-[#244b40]">{stockText(product)}</span></div><div className="flex flex-wrap items-center justify-end gap-1.5"><button disabled={busy || product.stock === 0} onClick={() => onAdjust(product, -1)} className="grid h-8 w-8 place-items-center rounded-lg border border-[#d6e5de] text-lg font-bold text-[#4e7064] transition hover:border-[#df9f85] hover:bg-[#fff5f0] hover:text-[#c85d39] disabled:cursor-not-allowed disabled:opacity-40">−</button><button disabled={busy} onClick={() => onAdjust(product, 1)} className="grid h-8 w-8 place-items-center rounded-lg bg-[#e5f3ed] text-lg font-bold text-[#0e715c] transition hover:bg-[#cfeade] disabled:cursor-not-allowed disabled:opacity-40">+</button><input aria-label={`จำนวนที่จะเพิ่มสำหรับ ${product.name}`} value={quantities[product.id] || ""} onChange={(event) => setQuantities((current) => ({ ...current, [product.id]: event.target.value }))} type="number" min="1" max={MAX_QUANTITY} step="1" inputMode="numeric" placeholder="จำนวน" className="h-8 w-20 rounded-lg border border-[#d6e5de] bg-white px-2 text-center text-xs font-bold text-[#244b40] outline-none focus:border-[#1c8068]" /><button disabled={busy || !canAdd} onClick={() => addStock(product)} className="h-8 rounded-lg bg-[#0e4d43] px-2.5 text-xs font-extrabold text-white transition hover:bg-[#0a4038] disabled:cursor-not-allowed disabled:opacity-40">เพิ่ม</button>{owner && onDelete && <button disabled={busy} onClick={() => onDelete(product)} title={`ลบ ${product.name}`} className="ml-1 grid h-8 w-8 place-items-center rounded-lg text-[#a17466] transition hover:bg-[#fff0ea] hover:text-[#c35130] focus:outline-none focus:ring-4 focus:ring-[#f7d8ca] disabled:opacity-40" aria-label={`ลบ ${product.name}`}><TrashIcon /></button>}</div></div>; })}</div>{!products.length && <EmptyState icon="⌕" title="ไม่พบสินค้า" text="ลองค้นหาด้วยคำอื่น หรือเพิ่มสินค้าใหม่" />}</section>;
 }
 
 function QuickActionCard({ title, text, action, glyph, tone, onClick }: { title: string; text: string; action: string; glyph: string; tone: string; onClick: () => void }) {
@@ -1189,6 +1203,7 @@ function ProductForm({
   const [showNewCategory, setShowNewCategory] = useState(false);
   const activeCategories = categories.filter((category) => category.is_active);
   const update = (key: keyof ProductDraft, value: string) => onChange({ ...draft, [key]: value });
+  const hasPackPrice = Boolean(draft.pricePack.trim());
 
   const addInlineCategory = async () => {
     const created = await onCreateCategory(newCategoryName);
@@ -1237,10 +1252,12 @@ function ProductForm({
         <Field label="ราคาแพ็ค (บาท)" hint="ไม่บังคับ">
           <input value={draft.pricePack} onChange={(event) => update("pricePack", event.target.value)} type="number" min="0" step="0.01" placeholder="เว้นว่างได้" className={inputClass} />
         </Field>
-        <Field label="จำนวนเริ่มต้นในคลัง">
+        <Field label="แพ็คต่อกล่อง" required={hasPackPrice} hint={hasPackPrice ? "ใช้แกะกล่องเมื่อขายเป็นแพ็ค" : "กรอกเมื่อมีราคาแพ็ค"}>
+          <input value={hasPackPrice ? draft.packsPerBox : ""} onChange={(event) => update("packsPerBox", event.target.value)} type="number" min="1" step="1" placeholder={hasPackPrice ? "เช่น 5" : "ไม่ต้องกรอก"} className={inputClass + " disabled:cursor-not-allowed disabled:opacity-60"} required={hasPackPrice} disabled={!hasPackPrice} />
+        </Field>
+        <Field label="จำนวนเริ่มต้นในคลัง (กล่อง)">
           <input value={draft.stock} onChange={(event) => update("stock", event.target.value)} type="number" min="0" step="1" placeholder="0" className={inputClass} />
         </Field>
-        <div className="hidden sm:block" />
         <div className="sm:col-span-2 flex flex-col-reverse gap-3 border-t border-[#edf2ef] pt-5 sm:flex-row sm:justify-end">
           <button type="button" onClick={() => onChange(createEmptyDraft(draft.categoryId))} className="rounded-xl px-4 py-3 text-sm font-extrabold text-[#658077] transition hover:bg-[#f3f7f5]">ล้างข้อมูล</button>
           <button disabled={pending || !activeCategories.length} type="submit" className="rounded-xl bg-[#f27d52] px-5 py-3 text-sm font-extrabold text-white shadow-[0_10px_20px_rgba(242,125,82,.22)] transition hover:bg-[#e86d43] disabled:opacity-60">{pending ? "กำลังบันทึก..." : "บันทึกสินค้าเข้าคลัง"} →</button>
@@ -1355,7 +1372,7 @@ function Field({ label, hint, required, children, className = "" }: { label: str
 
 function RetailerProductCard({ product, boxes, packs, onChange, onSetQuantity }: { product: Product; boxes: number; packs: number; onChange: (product: Product, unit: "boxes" | "packs", delta: number) => void; onSetQuantity: (product: Product, unit: "boxes" | "packs", value: number) => void }) {
   const stock = stockLabel(product.stock);
-  return <article className="rounded-2xl border border-[#e0ebe5] bg-[#fcfdfc] p-4 transition hover:-translate-y-0.5 hover:border-[#b9dace] hover:shadow-[0_10px_22px_rgba(17,70,58,.07)]"><div className="flex items-start gap-3"><ProductMark product={product} /><div className="min-w-0 flex-1"><p className="min-h-10 text-sm font-black leading-5 text-[#254a40]">{product.name}</p><div className="mt-2 flex flex-wrap items-center gap-1.5"><span className="rounded-md bg-[#edf5f1] px-2 py-1 text-[10px] font-black text-[#316756]">{product.category}</span><span className={`rounded-md px-2 py-1 text-[10px] font-black ${stock.className}`}>เหลือ {product.stock}</span></div></div></div><div className="mt-4 rounded-xl bg-[#f1f6f3] p-3"><PriceStepper label="กล่อง" value={boxes} valueLabel={price(product.price_box)} onDecrease={() => onChange(product, "boxes", -1)} onIncrease={() => onChange(product, "boxes", 1)} onSetValue={(value) => onSetQuantity(product, "boxes", value)} /><div className="my-2 border-t border-[#dce8e2]" />{product.price_pack !== null ? <PriceStepper label="แพ็ค" value={packs} valueLabel={price(product.price_pack)} onDecrease={() => onChange(product, "packs", -1)} onIncrease={() => onChange(product, "packs", 1)} onSetValue={(value) => onSetQuantity(product, "packs", value)} /> : <div className="flex items-center justify-between text-[11px] font-semibold text-[#8a9d95]"><span>แพ็ค</span><span>ไม่มีราคาต่อแพ็ค</span></div>}</div></article>;
+  return <article className="rounded-2xl border border-[#e0ebe5] bg-[#fcfdfc] p-4 transition hover:-translate-y-0.5 hover:border-[#b9dace] hover:shadow-[0_10px_22px_rgba(17,70,58,.07)]"><div className="flex items-start gap-3"><ProductMark product={product} /><div className="min-w-0 flex-1"><p className="min-h-10 text-sm font-black leading-5 text-[#254a40]">{product.name}</p><div className="mt-2 flex flex-wrap items-center gap-1.5"><span className="rounded-md bg-[#edf5f1] px-2 py-1 text-[10px] font-black text-[#316756]">{product.category}</span><span className={`rounded-md px-2 py-1 text-[10px] font-black ${stock.className}`}>เหลือ {stockText(product)}</span></div></div></div><div className="mt-4 rounded-xl bg-[#f1f6f3] p-3"><PriceStepper label="กล่อง" value={boxes} valueLabel={price(product.price_box)} onDecrease={() => onChange(product, "boxes", -1)} onIncrease={() => onChange(product, "boxes", 1)} onSetValue={(value) => onSetQuantity(product, "boxes", value)} /><div className="my-2 border-t border-[#dce8e2]" />{product.price_pack !== null ? <PriceStepper label={product.packs_per_box ? `แพ็ค (${product.packs_per_box}/กล่อง)` : "แพ็ค"} value={packs} valueLabel={price(product.price_pack)} onDecrease={() => onChange(product, "packs", -1)} onIncrease={() => onChange(product, "packs", 1)} onSetValue={(value) => onSetQuantity(product, "packs", value)} /> : <div className="flex items-center justify-between text-[11px] font-semibold text-[#8a9d95]"><span>แพ็ค</span><span>ไม่มีราคาต่อแพ็ค</span></div>}</div></article>;
 }
 
 function PriceStepper({ label, value, valueLabel, onDecrease, onIncrease, onSetValue }: { label: string; value: number; valueLabel: string; onDecrease: () => void; onIncrease: () => void; onSetValue: (value: number) => void }) {
