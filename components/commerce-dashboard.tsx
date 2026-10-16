@@ -199,9 +199,13 @@ function receiptDate(value: string) {
   }).format(new Date(`${value}T12:00:00+07:00`));
 }
 
+// Thresholds count full boxes; loose packs from an opened box do not lift a product out of "ใกล้หมด".
+const LOW_STOCK_BOXES = 3;
+const READY_STOCK_BOXES = 5;
+
 function stockLabel(stock: number) {
-  if (stock < 5) return { text: "เติมด่วน", className: "bg-red-600 text-white" };
-  if (stock < 10) return { text: "ใกล้หมด", className: "bg-[#fff5da] text-[#9f7017]" };
+  if (stock < LOW_STOCK_BOXES) return { text: "ใกล้หมด", className: "bg-red-600 text-white" };
+  if (stock <= READY_STOCK_BOXES) return { text: "เหลือน้อย", className: "bg-[#fff5da] text-[#9f7017]" };
   return { text: "พร้อมขาย", className: "bg-[#e6f5eb] text-[#227654]" };
 }
 
@@ -440,7 +444,7 @@ export function CommerceDashboard({ expectedRole }: { expectedRole: Role }) {
   const cartCount = useMemo(() => cartLines.reduce((total, line) => total + line.boxes + line.packs, 0), [cartLines]);
   const pendingOrders = useMemo(() => orders.filter((order) => order.status === "PENDING").length, [orders]);
   const deliveringOrders = useMemo(() => orders.filter((order) => order.status === "DELIVERING").length, [orders]);
-  const lowStock = useMemo(() => products.filter((product) => product.stock < 10), [products]);
+  const lowStock = useMemo(() => products.filter((product) => product.stock < LOW_STOCK_BOXES), [products]);
   const todayReceiptDate = thailandDateKey();
   const todayReceipts = useMemo(
     () => receipts.filter((receipt) => receipt.receipt_date === todayReceiptDate),
@@ -935,7 +939,7 @@ export function CommerceDashboard({ expectedRole }: { expectedRole: Role }) {
       <MetricRow
         metrics={[
           { label: "สินค้าทั้งระบบ", value: products.length.toString(), note: "พร้อมให้ผู้ค้าปลีกเลือก", glyph: "▦", tone: "bg-[#e5f3ed] text-[#0e725e]" },
-          { label: "ต้องเติมสต็อก", value: lowStock.length.toString(), note: "น้อยกว่าหรือเท่ากับ 20", glyph: "!", tone: "bg-[#fff0e9] text-[#c45c37]" },
+          { label: "ต้องเติมสต็อก", value: lowStock.length.toString(), note: `น้อยกว่า ${LOW_STOCK_BOXES} กล่อง`, glyph: "!", tone: "bg-[#fff0e9] text-[#c45c37]" },
           { label: "รอจัดสินค้า", value: pendingOrders.toString(), note: "คำสั่งซื้อที่เพิ่งเข้าระบบ", glyph: "☷", tone: "bg-[#fff5da] text-[#9d6c14]" },
         ]}
       />
