@@ -37,7 +37,9 @@ export interface Retailer {
 
 export interface OrderItem {
   id?: string;
-  product_id: string;
+  // Products can be deleted after an order is placed. The database deliberately
+  // keeps the historical order line and clears this foreign key in that case.
+  product_id: string | null;
   product_name?: string;
   quantity_box: number;
   quantity_pack: number;
