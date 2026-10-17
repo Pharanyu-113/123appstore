@@ -1434,21 +1434,98 @@ function LiveLocationSharingCard({ order, active, error, onStart, onStop }: {
   );
 }
 
-function TrackingWorkspace({ orders, title, caption }: { orders: Order[]; title: string; caption: string }) {
-  const delivering = orders.filter((order) => order.status === "DELIVERING");
-  const target = delivering.find((order) => order.tracking) || delivering[0] || orders.find((order) => order.tracking) || null;
-  const liveTracking = target?.tracking;
-  if (liveTracking) return <LiveTrackingWorkspace orders={orders} title={title} caption={caption} target={target} tracking={liveTracking} />;
-  const tracking = target?.tracking || null;
-  return <section className="overflow-hidden rounded-[27px] border border-[#dbe8e2] bg-white shadow-sm"><div className="flex flex-col justify-between gap-3 border-b border-[#e2ebe6] p-5 sm:flex-row sm:items-center"><div><h2 className="text-xl font-black tracking-tight text-[#173f35]">{title}</h2><p className="mt-1 text-sm text-[#71877e]">{caption}</p></div><span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#e5f5eb] px-3 py-1.5 text-[11px] font-black text-[#1b7654]"><span className="h-2 w-2 rounded-full bg-[#39ae77] shadow-[0_0_0_4px_rgba(57,174,119,.15)]" /> LIVE TRACKING</span></div><div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_310px] lg:p-5"><div className="map-surface relative min-h-[390px] overflow-hidden rounded-[22px] border border-[#caddd4]"><div className="absolute left-[13%] top-[16%] rounded-lg bg-white/85 px-2 py-1 text-[10px] font-black text-[#49756a] shadow-sm">ถ.พระราม 4</div><div className="absolute right-[13%] top-[18%] rounded-lg bg-white/85 px-2 py-1 text-[10px] font-black text-[#49756a] shadow-sm">บางรัก</div><div className="absolute bottom-[19%] left-[26%] rounded-lg bg-white/85 px-2 py-1 text-[10px] font-black text-[#49756a] shadow-sm">คลองสาน</div><svg className="absolute inset-0 h-full w-full" viewBox="0 0 700 420" preserveAspectRatio="none" fill="none" aria-hidden="true"><path className="map-route" d="M112 336C190 310 202 147 310 191C415 234 399 328 579 101" stroke="#f27d52" strokeWidth="4" strokeLinecap="round" /><path d="M112 336C190 310 202 147 310 191C415 234 399 328 579 101" stroke="white" strokeOpacity=".8" strokeWidth="11" strokeLinecap="round" /></svg><MapPin className="left-[13%] top-[74%]" type="shop" label="คลังสินค้า" /><MapPin className="left-[43%] top-[42%]" type="truck" label={tracking?.employee?.shop_name || "พนักงานนำส่ง"} /><MapPin className="right-[14%] top-[18%]" type="shop" label={target?.retailer?.shop_name || "ปลายทาง"} /><div className="absolute bottom-4 left-4 rounded-xl border border-white/70 bg-white/90 px-3 py-2 shadow-sm backdrop-blur"><p className="text-[10px] font-black text-[#25554a]">ตำแหน่งอัปเดตล่าสุด</p><p className="mt-0.5 text-[11px] font-semibold text-[#778f85]">{tracking ? `${tracking.latitude.toFixed(4)}, ${tracking.longitude.toFixed(4)}` : "รอพนักงานแชร์พิกัด"}</p></div></div><aside className="rounded-[22px] bg-[#f1f6f3] p-5"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#0e4d43] text-xl text-white">⌁</span><p className="mt-5 text-[11px] font-black tracking-[.11em] text-[#638075]">DELIVERY STATUS</p><h3 className="mt-1 text-xl font-black tracking-tight text-[#173f35]">{target?.retailer?.shop_name || "ยังไม่มีการนำส่ง"}</h3><p className="mt-2 text-sm leading-6 text-[#668077]">{target ? `ยอดคำสั่งซื้อ ${price(target.total_amount)} · ${statusMeta[target.status].label}` : "เมื่อพนักงานเริ่มนำส่ง สถานะและพิกัดจะแสดงที่นี่"}</p><div className="mt-5 space-y-3">{orders.filter((order) => order.status === "DELIVERING").map((order) => <div key={order.id} className="rounded-xl bg-white p-3 shadow-sm"><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#747bd1]" /><span className="min-w-0 flex-1 truncate text-xs font-black text-[#365b50]">{order.retailer?.shop_name || "ร้านค้า"}</span></div><p className="mt-1 text-[11px] text-[#7b9288]">{order.tracking ? `อัปเดต ${dateTime(order.tracking.updated_at)}` : "กำลังรอพิกัด"}</p></div>)}</div></aside></div></section>;
+const DEFAULT_MAP_CENTER = { latitude: 17.1545, longitude: 104.1348 };
+
+function areaMapEmbedUrl(latitude: number, longitude: number) {
+  const latitudeSpan = 0.03;
+  const longitudeSpan = 0.045;
+  const bounds = [longitude - longitudeSpan, latitude - latitudeSpan, longitude + longitudeSpan, latitude + latitudeSpan]
+    .map((value) => value.toFixed(6))
+    .join(",");
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bounds)}&layer=mapnik`;
 }
 
-function LiveTrackingWorkspace({ orders, title, caption, target, tracking }: {
+function TrackingWorkspace({ orders, title, caption }: { orders: Order[]; title: string; caption: string }) {
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const delivering = orders.filter((order) => order.status === "DELIVERING");
+  const trackedDelivering = delivering.filter((order) => order.tracking);
+  const target =
+    trackedDelivering.find((order) => order.id === selectedOrderId) ||
+    trackedDelivering[0] ||
+    delivering[0] ||
+    orders.find((order) => order.tracking) ||
+    null;
+  const liveTracking = target?.tracking;
+  if (liveTracking) {
+    return (
+      <LiveTrackingWorkspace
+        orders={orders}
+        title={title}
+        caption={caption}
+        target={target}
+        tracking={liveTracking}
+        onSelectOrder={setSelectedOrderId}
+      />
+    );
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[27px] border border-[#dbe8e2] bg-white shadow-sm">
+      <div className="flex flex-col justify-between gap-3 border-b border-[#e2ebe6] p-5 sm:flex-row sm:items-center">
+        <div>
+          <h2 className="text-xl font-black tracking-tight text-[#173f35]">{title}</h2>
+          <p className="mt-1 text-sm text-[#71877e]">{caption}</p>
+        </div>
+        <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#f1f4f2] px-3 py-1.5 text-[11px] font-black text-[#6b8279]">
+          <span className="h-2 w-2 rounded-full bg-[#9db3aa]" /> รอพิกัด GPS
+        </span>
+      </div>
+      <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_310px] lg:p-5">
+        <div className="relative min-h-[390px] overflow-hidden rounded-[22px] border border-[#caddd4] bg-[#edf5f0]">
+          <iframe
+            title="แผนที่พื้นที่จัดส่ง"
+            src={areaMapEmbedUrl(DEFAULT_MAP_CENTER.latitude, DEFAULT_MAP_CENTER.longitude)}
+            className="absolute inset-0 h-full w-full border-0"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+          <div className="absolute bottom-4 left-4 max-w-[80%] rounded-xl border border-white/70 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+            <p className="text-[10px] font-black text-[#25554a]">ตำแหน่ง GPS ล่าสุด</p>
+            <p className="mt-0.5 text-[11px] font-semibold text-[#778f85]">
+              {target ? "กำลังรอพนักงานเริ่มแชร์ตำแหน่ง" : "ยังไม่มีคำสั่งซื้อที่กำลังนำส่ง"}
+            </p>
+          </div>
+        </div>
+        <aside className="rounded-[22px] bg-[#f1f6f3] p-5">
+          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#0e4d43] text-xl text-white">⌁</span>
+          <p className="mt-5 text-[11px] font-black tracking-[.11em] text-[#638075]">DELIVERY STATUS</p>
+          <h3 className="mt-1 text-xl font-black tracking-tight text-[#173f35]">{target?.retailer?.shop_name || "ยังไม่มีการนำส่ง"}</h3>
+          <p className="mt-2 text-sm leading-6 text-[#668077]">
+            {target
+              ? `ยอดคำสั่งซื้อ ${price(target.total_amount)} · ${statusMeta[target.status].label}`
+              : "เมื่อพนักงานเริ่มนำส่งและแชร์ตำแหน่ง แผนที่จะแสดงพิกัดจริงของพนักงานที่นี่"}
+          </p>
+          <div className="mt-5 space-y-3">
+            {delivering.map((order) => (
+              <div key={order.id} className="rounded-xl bg-white p-3 shadow-sm">
+                <div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#747bd1]" /><span className="min-w-0 flex-1 truncate text-xs font-black text-[#365b50]">{order.retailer?.shop_name || "ร้านค้า"}</span></div>
+                <p className="mt-1 text-[11px] text-[#7b9288]">กำลังรอพิกัด</p>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function LiveTrackingWorkspace({ orders, title, caption, target, tracking, onSelectOrder }: {
   orders: Order[];
   title: string;
   caption: string;
   target: Order | null;
   tracking: DeliveryTracking;
+  onSelectOrder?: (orderId: string) => void;
 }) {
   const deliveringOrders = orders.filter((order) => order.status === "DELIVERING");
   const mapUrl = googleMapsUrl(tracking.latitude, tracking.longitude);
@@ -1487,21 +1564,22 @@ function LiveTrackingWorkspace({ orders, title, caption, target, tracking }: {
           <a href={mapUrl} target="_blank" rel="noreferrer" className="mt-4 flex w-full items-center justify-center rounded-xl bg-[#0e4d43] px-4 py-3 text-sm font-extrabold text-white transition hover:bg-[#0a4038]">เปิดใน Google Maps ↗</a>
           <div className="mt-5 space-y-3">
             {deliveringOrders.map((order) => (
-              <div key={order.id} className="rounded-xl bg-white p-3 shadow-sm">
+              <button
+                key={order.id}
+                type="button"
+                disabled={!order.tracking}
+                onClick={() => onSelectOrder?.(order.id)}
+                className={`block w-full rounded-xl p-3 text-left shadow-sm transition ${order.id === target?.id ? "bg-[#e2f2eb] ring-1 ring-[#9fd3c0]" : "bg-white hover:bg-[#f6faf8]"} disabled:cursor-default`}
+              >
                 <div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#747bd1]" /><span className="min-w-0 flex-1 truncate text-xs font-black text-[#365b50]">{order.retailer?.shop_name || "ร้านค้า"}</span></div>
                 <p className="mt-1 text-[11px] text-[#7b9288]">{order.tracking ? `อัปเดต ${dateTime(order.tracking.updated_at)}` : "กำลังรอพิกัด"}</p>
-              </div>
+              </button>
             ))}
           </div>
         </aside>
       </div>
     </section>
   );
-}
-
-function MapPin({ className, type, label }: { className: string; type: "shop" | "truck"; label: string }) {
-  const isTruck = type === "truck";
-  return <div className={`absolute ${className}`}><span className={`pin-pulse absolute -left-2 -top-2 h-12 w-12 rounded-full ${isTruck ? "bg-[#0e4d43]/20" : "bg-[#f27d52]/20"}`} /><span className={`relative grid h-8 w-8 place-items-center rounded-full border-[3px] border-white text-sm shadow-[0_6px_16px_rgba(12,69,58,.22)] ${isTruck ? "bg-[#0e4d43] text-white" : "bg-[#f27d52] text-white"}`}>{isTruck ? "⌁" : "◫"}</span><span className="absolute left-1/2 top-10 w-max -translate-x-1/2 rounded-md bg-[#133e34] px-2 py-1 text-[9px] font-black text-white shadow-sm">{label}</span></div>;
 }
 
 function EmptyState({ icon, title, text }: { icon: string; title: string; text: string }) {
